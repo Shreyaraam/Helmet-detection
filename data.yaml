@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['Helmet', 'No Helmet']
+
+roboflow:
+  workspace: shreya-9m1bh
+  project: helmet-detection-y201k
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/shreya-9m1bh/helmet-detection-y201k/dataset/3
