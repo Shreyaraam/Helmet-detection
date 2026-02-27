@@ -1,0 +1,20 @@
+{
+    "model_path": "best.pt",
+    "video_path": "test_video.mp4",
+
+    "senders": [
+        {
+            "email": "shreyarambly@gmail.com",
+            "app_password": "ymuavtiztfnmlzwk"
+        } 
+    ],
+
+    "receivers": [
+        "ruchithab.1si22et020@gmail.com"   
+    ],
+
+    "cc": [
+        "director@company.com",
+        "hr@company.com"
+    ]
+}
