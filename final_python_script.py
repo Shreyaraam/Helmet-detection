@@ -3,28 +3,34 @@ import os
 from datetime import datetime
 import traceback
 
-# ---------------- LOG FILE SETUP ----------------
+# ---------------- PATH SETUP ----------------
 base_path = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
+
 log_file_path = os.path.join(base_path, "helmet_monitor_log.txt")
+
+# Create violation folder
+violation_folder = os.path.join(base_path, "violations")
+if not os.path.exists(violation_folder):
+    os.makedirs(violation_folder)
 
 def log_to_file(message):
     with open(log_file_path, "a", encoding="utf-8") as f:
         f.write(message + "\n")
 
-# Create new section header for each run
+# ---------------- RUN HEADER ----------------
 run_start_time = datetime.now()
 log_to_file("\n" + "="*60)
 log_to_file(f"Run Started At: {run_start_time}")
 log_to_file("="*60)
 
-# ---------------- ORIGINAL IMPORTS ----------------
+# ---------------- IMPORTS ----------------
 from ultralytics import YOLO
 import cv2
 import yagmail
 import time
 import json
 
-ALERT_COOLDOWN = 10  
+ALERT_COOLDOWN = 10
 
 # ---------------- CONFIG LOAD ----------------
 config_path = os.path.join(base_path, "config.json")
@@ -42,19 +48,23 @@ senders = config["senders"]
 receivers = config["receivers"]
 cc_list = config.get("cc", [])
 
-# Track changes
+# Track config changes
 last_config_modified_time = os.path.getmtime(config_path)
 current_model_path = model_path
 current_video_path = video_path
 
-# ---------------- INITIALIZE ----------------
+# ---------------- INITIALIZE MODEL ----------------
 model = YOLO(model_path)
 cap = cv2.VideoCapture(video_path)
 
 last_alert_time = 0
 
+# -------- TRACKING STORAGE (NEW) --------
+alerted_ids = set()
+
 print("Monitoring started...")
 
+# ---------------- CONFIG RELOAD FUNCTION ----------------
 def load_config():
     global senders, receivers, cc_list
     global last_config_modified_time
@@ -68,12 +78,11 @@ def load_config():
             with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
-            # Update email settings
             senders = config["senders"]
             receivers = config["receivers"]
             cc_list = config.get("cc", [])
 
-            # Update model if changed
+            # Reload model if changed
             new_model_path = config["model_path"]
             if new_model_path != current_model_path:
                 print("Reloading model...")
@@ -81,7 +90,7 @@ def load_config():
                 current_model_path = new_model_path
                 print("Model reloaded.")
 
-            # Update video if changed
+            # Reload video source if changed
             new_video_path = config["video_path"]
             if new_video_path != current_video_path:
                 print("Reloading video source...")
@@ -96,6 +105,7 @@ def load_config():
         except Exception as e:
             print("Error loading config.json:", e)
 
+# ---------------- MAIN LOOP ----------------
 try:
     while True:
 
@@ -103,21 +113,39 @@ try:
 
         ret, frame = cap.read()
         if not ret:
-            raise Exception("Camera connection lost")
+            cap.release()
 
-        results = model(frame)
+            while True:
+                cap = cv2.VideoCapture(current_video_path)
 
-        no_helmet_detected = False
+                if cap.isOpened():
+                    break
+
+                time.sleep(5)
+
+        # -------- YOLO TRACKING (NEW) --------
+        results = model.track(frame, persist=True, tracker="bytetrack.yaml")
+
+        new_violation_detected = False
 
         for r in results:
+
+            if r.boxes.id is None:
+                continue
+
             for box in r.boxes:
+
+                track_id = int(box.id[0])
                 cls = int(box.cls[0])
                 label = model.names[cls].lower()
 
-                if "no" in label:
-                    no_helmet_detected = True
+                if "no" in label and track_id not in alerted_ids:
 
-        if no_helmet_detected:
+                    alerted_ids.add(track_id)
+                    new_violation_detected = True
+
+        if new_violation_detected:
+
             current_time = time.time()
 
             if current_time - last_alert_time > ALERT_COOLDOWN:
@@ -125,7 +153,11 @@ try:
                 print("No Helmet Detected")
                 log_to_file(f"{datetime.now()} - No Helmet Detected")
 
-                screenshot_name = f"violation_{int(current_time)}.jpg"
+                screenshot_name = os.path.join(
+                    violation_folder,
+                    f"violation_{int(current_time)}.jpg"
+                )
+
                 cv2.imwrite(screenshot_name, frame)
 
                 for sender in senders:
@@ -153,12 +185,6 @@ try:
 
                 last_alert_time = current_time
 
-        annotated_frame = results[0].plot()
-        cv2.imshow("Helmet Monitoring", annotated_frame)
-
-        if cv2.waitKey(1) == 27:
-            break
-
 except Exception as e:
     error_message = f"{datetime.now()} - ERROR: {str(e)}"
     print(error_message)
@@ -166,7 +192,6 @@ except Exception as e:
     log_to_file(traceback.format_exc())
 
 cap.release()
-cv2.destroyAllWindows()
 
 log_to_file(f"Run Ended At: {datetime.now()}")
 log_to_file("="*60)
