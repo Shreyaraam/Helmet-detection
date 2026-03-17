@@ -4,13 +4,13 @@
 
     "senders": [
         {
-            "email": "shreyarambly@gmail.com",
-            "app_password": "ymuavtiztfnmlzwk"
+            "email": "sender@mail.com",
+            "app_password": "apppassword without space"
         } 
     ],
 
     "receivers": [
-        "ruchithab.1si22et020@gmail.com"   
+        "something@mail.com"   
     ],
 
     "cc": [
